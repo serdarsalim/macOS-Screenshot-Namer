@@ -31,11 +31,32 @@ into Slack.
 
 Two shots of the same screen on the same day get `-2`, `-3`, and so on.
 
+## Three modes
+
+```bash
+shotname area      # drag a region → saved to the Desktop, named
+shotname clip      # drag a region → clipboard, carrying its name
+shotname window    # click a window → saved to the Desktop, named
+```
+
+`clip` is the interesting one. A normally copied screenshot is anonymous —
+paste it and the receiving app invents a name or shows none. This writes two
+flavours to one clipboard item: the pixels, so pasting behaves exactly as it
+always did, and a reference to the saved file, so apps that understand files
+show the real name. Those files live in `CLIP_DIR` rather than on the Desktop,
+and get swept after a month.
+
+`window` works out which window you clicked by matching the captured image
+against the on-screen window sizes, rather than assuming the frontmost one.
+Clicking a background window would otherwise name the file after whatever
+happened to be in front.
+
 ## Install
 
 ```bash
 mkdir -p ~/.config/shotname && cp config.example.sh ~/.config/shotname/config.sh
 swiftc -O src/frontwindow.swift -o bin/frontwindow
+swiftc -O src/pbimage.swift -o bin/pbimage
 ```
 
 Then put `bin/shotname` on your PATH, or call it by its full path. Without the

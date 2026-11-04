@@ -16,10 +16,13 @@ guard CommandLine.arguments.count > 1 else { exit(1) }
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
 guard let png = try? Data(contentsOf: url) else { exit(1) }
 
+// Clear first, then build the item. An item constructed before the pasteboard
+// is cleared loses its file-URL flavour by the time it is written.
+let pb = NSPasteboard.general
+pb.clearContents()
+
 let item = NSPasteboardItem()
 item.setData(png, forType: .png)
 item.setData(url.dataRepresentation, forType: .fileURL)
 
-let pb = NSPasteboard.general
-pb.clearContents()
 pb.writeObjects([item])

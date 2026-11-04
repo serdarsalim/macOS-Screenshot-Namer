@@ -12,6 +12,11 @@ set -uo pipefail
 CONFIG="${SHOTNAME_CONFIG:-$HOME/.config/shotname/config.sh}"
 
 DEST="$HOME/Desktop"
+# Clipboard captures need a real file on disk, because the filename is what
+# the clipboard carries. They go here rather than cluttering the Desktop, and
+# get swept after a month.
+CLIP_DIR="$HOME/Pictures/shotname"
+CLIP_KEEP_DAYS=30
 MAX_TITLE_WORDS=4
 MAX_PAGE_WORDS=6
 DETAIL_SOURCE="none"   # none | apple | anthropic
@@ -41,7 +46,7 @@ say() { printf '%s\n' "$*" >&2; }
 # no separate Accessibility grant to go hunting for.
 read_context() {
   local helper="$(dirname "$0")/frontwindow"
-  [ -x "$helper" ] && "$helper" 2>/dev/null && return
+  [ -x "$helper" ] && "$helper" "$@" 2>/dev/null && return
   # No helper compiled: fall back to the app name, which needs no permission.
   printf '%s\t\n' "$(osascript -e 'tell application "System Events" to name of first process whose frontmost is true' 2>/dev/null)"
 }
@@ -163,17 +168,32 @@ detail_from_anthropic() {
 
 # ---------------------------------------------------------------- capture
 
-IFS=$'\t' read -r app title <<< "$(read_context)"
+MODE="${1:-$CAPTURE_MODE}"
 
 tmp="$(mktemp -t shotname).png"
-case "$CAPTURE_MODE" in
+case "$MODE" in
+  # Window mode asks afterwards which window was clicked, so read the context
+  # from the captured image rather than from whatever was in front.
   window) screencapture -w -o "$tmp" ;;
   screen) screencapture -x "$tmp" ;;
-  *)      screencapture -i "$tmp" ;;
+  clip|area|interactive|*)
+          IFS=$'\t' read -r app title <<< "$(read_context)"
+          screencapture -i "$tmp" ;;
 esac
 
 # Escape during capture leaves no file. That is a cancel, not an error.
 [ -s "$tmp" ] || { rm -f "$tmp"; exit 0; }
+
+if [ "$MODE" = "window" ]; then
+  size="$(sips -g pixelWidth -g pixelHeight "$tmp" 2>/dev/null \
+          | awk '/pixelWidth/{w=$2} /pixelHeight/{h=$2} END{print w"x"h}')"
+  IFS=$'\t' read -r app title <<< "$(read_context --match "$size")"
+elif [ "$MODE" = "screen" ]; then
+  IFS=$'\t' read -r app title <<< "$(read_context)"
+fi
+
+[ "$MODE" = "clip" ] && DEST="$CLIP_DIR"
+mkdir -p "$DEST"
 
 # ---------------------------------------------------------------- name it
 
@@ -219,4 +239,14 @@ while [ -e "$final" ]; do
 done
 
 mv "$tmp" "$final"
+
+if [ "$MODE" = "clip" ]; then
+  # Both flavours go on the clipboard: the pixels, so pasting works exactly as
+  # it always did, and the file reference, so apps that understand files show
+  # the real name instead of inventing one.
+  helper="$(dirname "$0")/pbimage"
+  [ -x "$helper" ] && "$helper" "$final"
+  find "$CLIP_DIR" -name '*.png' -mtime "+$CLIP_KEEP_DAYS" -delete 2>/dev/null
+fi
+
 printf '%s\n' "$final"
