@@ -1,0 +1,180 @@
+#!/bin/bash
+# shotname — take a screenshot that names itself.
+#
+# Grabs the frontmost app and window title BEFORE the capture (that part is
+# free, instant and never leaves the Mac), then optionally asks a model for one
+# or two words about what is actually on screen.
+#
+# Result: nudge-contacts-empty-state-2026-11-04.png
+
+set -uo pipefail
+
+CONFIG="${SHOTNAME_CONFIG:-$HOME/.config/shotname/config.sh}"
+
+DEST="$HOME/Desktop"
+MAX_TITLE_WORDS=4
+DETAIL_SOURCE="none"   # none | apple | anthropic
+ANTHROPIC_MODEL="claude-haiku-5-5"
+CAPTURE_MODE="interactive"   # interactive | window | screen
+SKIP_APP_NAME_FOR="Google Chrome|Safari|Firefox|Arc|Brave Browser|Microsoft Edge"
+
+# Long app names eat the whole budget before the window title gets a word in.
+app_alias() {
+  case "$1" in
+    "Visual Studio Code") printf 'code' ;;
+    "Activity Monitor")   printf 'activity' ;;
+    "System Settings")    printf 'settings' ;;
+    "Claude")             printf 'claude' ;;
+    *)                    printf '%s' "$1" ;;
+  esac
+}
+
+[ -f "$CONFIG" ] && . "$CONFIG"
+
+say() { printf '%s\n' "$*" >&2; }
+
+# ---------------------------------------------------------------- context
+
+frontmost_app() {
+  osascript -e 'tell application "System Events" to name of first process whose frontmost is true' 2>/dev/null
+}
+
+# Needs Accessibility permission for whatever runs this script. Without it we
+# silently fall back to the app name alone rather than failing the capture.
+front_window_title() {
+  local app="$1"
+  osascript 2>/dev/null <<EOF
+tell application "System Events"
+  tell process "$app"
+    try
+      return name of front window
+    on error
+      return ""
+    end try
+  end tell
+end tell
+EOF
+}
+
+# ---------------------------------------------------------------- slugging
+
+slugify() {
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-*//; s/-*$//'
+}
+
+# Drop words already carried by an earlier part of the name, cap the length,
+# and throw away the noise browsers and editors pad their titles with.
+trim_title() {
+  local slug="$1" seen="$2" max="$3"
+  local out="" count=0 w
+  for w in ${slug//-/ }; do
+    case "$w" in
+      ''|the|a|an|and|or|of|on|in|at|to|for|my|new|tab|untitled|window|page|home) continue ;;
+    esac
+    # Bare counts and terminal dimensions carry nothing: "(12)", "120x30".
+    case "$w" in
+      *[!0-9]*) ;;
+      *) continue ;;
+    esac
+    printf '%s' "$w" | grep -qE '^[0-9]+x[0-9]+$' && continue
+    [ ${#w} -le 1 ] && continue
+    case "-$seen-$out-" in *"-$w-"*) continue ;; esac
+    out="${out:+$out-}$w"
+    count=$((count + 1))
+    [ "$count" -ge "$max" ] && break
+  done
+  printf '%s' "$out"
+}
+
+# ---------------------------------------------------------------- detail
+
+detail_from_model() {
+  local image="$1"
+  case "$DETAIL_SOURCE" in
+    apple)     "$(dirname "$0")/shotname-apple" "$image" 2>/dev/null ;;
+    anthropic) detail_from_anthropic "$image" ;;
+    *)         printf '' ;;
+  esac
+}
+
+detail_from_anthropic() {
+  local image="$1" small b64 body
+  [ -z "${ANTHROPIC_API_KEY:-}" ] && { say "shotname: no ANTHROPIC_API_KEY, skipping detail"; return; }
+
+  # Downscale before sending: a screenshot at 768px wide costs a fraction of
+  # the tokens and the model reads it just as well.
+  small="$(mktemp -t shotname).png"
+  sips --resampleWidth 768 "$image" --out "$small" >/dev/null 2>&1 || cp "$image" "$small"
+  b64="$(base64 < "$small" | tr -d '\n')"
+  rm -f "$small"
+
+  body=$(jq -n --arg model "$ANTHROPIC_MODEL" --arg img "$b64" '{
+    model: $model,
+    max_tokens: 20,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: "image/png", data: $img } },
+        { type: "text", text: "Reply with two or three lowercase hyphenated words naming what is notable in this screenshot (a state, an error, a specific view). No app name, no punctuation, no explanation. Example: empty-state. Example: 429-error." }
+      ]
+    }]
+  }')
+
+  curl -sS --max-time 20 https://api.anthropic.com/v1/messages \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -H "content-type: application/json" \
+    -d "$body" 2>/dev/null \
+    | jq -r '.content[0].text // empty' 2>/dev/null
+}
+
+# ---------------------------------------------------------------- capture
+
+app="$(frontmost_app)"
+title="$(front_window_title "$app")"
+
+tmp="$(mktemp -t shotname).png"
+case "$CAPTURE_MODE" in
+  window) screencapture -w -o "$tmp" ;;
+  screen) screencapture -x "$tmp" ;;
+  *)      screencapture -i "$tmp" ;;
+esac
+
+# Escape during capture leaves no file. That is a cancel, not an error.
+[ -s "$tmp" ] || { rm -f "$tmp"; exit 0; }
+
+# ---------------------------------------------------------------- name it
+
+app_slug=""
+if ! printf '%s' "$app" | grep -qE "^($SKIP_APP_NAME_FOR)$"; then
+  app_slug="$(slugify "$(app_alias "$app")")"
+fi
+
+# Mail and chat apps put the account address in the title. Keep it out of a
+# filename that gets pasted into Slack later.
+title="$(printf '%s' "$title" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}//g')"
+
+title_slug="$(trim_title "$(slugify "$title")" "$app_slug" "$MAX_TITLE_WORDS")"
+
+detail_slug="$(trim_title "$(slugify "$(detail_from_model "$tmp")")" "$app_slug-$title_slug" 3)"
+
+name=""
+for part in "$app_slug" "$title_slug" "$detail_slug"; do
+  [ -n "$part" ] && name="${name:+$name-}$part"
+done
+[ -z "$name" ] && name="screenshot"
+
+# Name first, date trailing: the date is for when the file leaves the Mac and
+# loses its metadata, not for sorting.
+stamp="$(date +%Y-%m-%d)"
+final="$DEST/$name-$stamp.png"
+n=2
+while [ -e "$final" ]; do
+  final="$DEST/$name-$stamp-$n.png"
+  n=$((n + 1))
+done
+
+mv "$tmp" "$final"
+printf '%s\n' "$final"
