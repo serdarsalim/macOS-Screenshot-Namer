@@ -17,6 +17,12 @@ DEST="$HOME/Desktop"
 # replaces the last rather than building a pile nobody asked for.
 CLIP_DIR="$HOME/Pictures/shotname"
 CLIP_KEEP=1
+# webp saves real space on flat UI and is lossless here, so text stays sharp.
+# Needs cwebp; falls back to png without it.
+CLIP_FORMAT="webp"
+# Offer the file alone, with no pixel flavour. Apps given both take the pixels
+# and ignore the name.
+CLIP_FILE_ONLY="yes"
 MAX_TITLE_WORDS=4
 MAX_PAGE_WORDS=6
 DETAIL_SOURCE="none"   # none | apple | anthropic
@@ -230,26 +236,40 @@ done
 
 # Name first, date trailing: the date is for when the file leaves the Mac and
 # loses its metadata, not for sorting.
+ext="png"
+if [ "$MODE" = "clip" ] && [ "$CLIP_FORMAT" = "webp" ] && command -v cwebp >/dev/null; then
+  ext="webp"
+fi
+
 stamp="$(date +%Y-%m-%d)"
-final="$DEST/$name-$stamp.png"
+final="$DEST/$name-$stamp.$ext"
 n=2
 while [ -e "$final" ]; do
-  final="$DEST/$name-$stamp-$n.png"
+  final="$DEST/$name-$stamp-$n.$ext"
   n=$((n + 1))
 done
 
-mv "$tmp" "$final"
+if [ "$ext" = "webp" ]; then
+  # -lossless, because these are screenshots of text as often as photographs
+  # and lossy webp rings around small type.
+  cwebp -quiet -lossless "$tmp" -o "$final" 2>/dev/null && rm -f "$tmp" || mv "$tmp" "$final"
+else
+  mv "$tmp" "$final"
+fi
 
 if [ "$MODE" = "clip" ]; then
   # Both flavours go on the clipboard: the pixels, so pasting works exactly as
   # it always did, and the file reference, so apps that understand files show
   # the real name instead of inventing one.
   helper="$(dirname "$0")/pbimage"
-  [ -x "$helper" ] && "$helper" "$final" 2>/dev/null
+  flags=""
+  [ "$CLIP_FILE_ONLY" = "yes" ] && flags="--file-only"
+  [ -x "$helper" ] && "$helper" "$final" $flags 2>/dev/null
 
   # Keep only the newest few. The clipboard points at exactly one of these,
   # and it is always the newest, so older ones can never be pasted again.
-  ls -t "$CLIP_DIR"/*.png 2>/dev/null | tail -n "+$((CLIP_KEEP + 1))" | while read -r old; do
+  ls -t "$CLIP_DIR"/*.png "$CLIP_DIR"/*.webp 2>/dev/null \
+    | tail -n "+$((CLIP_KEEP + 1))" | while read -r old; do
     rm -f "$old"
   done
 fi

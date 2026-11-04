@@ -10,6 +10,15 @@ DEST="$HOME/Desktop"
 CLIP_DIR="$HOME/Pictures/shotname"
 CLIP_KEEP=1
 
+# webp or png. webp here is lossless, so text stays sharp, and still lands
+# around half the size on flat UI. Needs cwebp; falls back to png without it.
+CLIP_FORMAT="webp"
+
+# Put only the file reference on the clipboard, no pixels. Apps offered both
+# take the pixels and never read the name, which defeats the point. Set this
+# to "no" if you paste into something that cannot accept a file.
+CLIP_FILE_ONLY="yes"
+
 # How many words of the window title to keep after the junk is filtered out.
 MAX_TITLE_WORDS=4
 # Browser page titles get their own budget, since the site name leads.

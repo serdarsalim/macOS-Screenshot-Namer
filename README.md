@@ -40,10 +40,19 @@ shotname window    # click a window → saved to the Desktop, named
 ```
 
 `clip` is the interesting one. A normally copied screenshot is anonymous —
-paste it and the receiving app invents a name or shows none. This writes two
-flavours to one clipboard item: the pixels, so pasting behaves exactly as it
-always did, and a reference to the saved file, so apps that understand files
-show the real name.
+paste it and the receiving app invents a name or shows none. This puts a
+reference to the saved file on the clipboard instead, so the real name travels
+with it.
+
+Only the file reference, deliberately. Offered both a file and raw pixels, an
+app takes the pixels and never reads the name, which is exactly the case this
+exists for. `CLIP_FILE_ONLY="no"` puts the pixels back for anything that
+cannot accept a pasted file.
+
+Clipboard captures are lossless webp, roughly half the size of the PNG with
+identical pixels. Lossy webp would have been smaller still and is the wrong
+trade here: it rings around small type, and screenshots are text as often as
+they are pictures.
 
 Those files live in `CLIP_DIR` rather than on the Desktop, and each capture
 replaces the last. The clipboard only ever points at the newest one, so older
