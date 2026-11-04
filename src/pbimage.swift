@@ -26,3 +26,12 @@ item.setData(png, forType: .png)
 item.setData(url.dataRepresentation, forType: .fileURL)
 
 pb.writeObjects([item])
+
+// writeObjects returns before the pasteboard server has finished taking both
+// flavours, and exiting now loses the file reference about four times in five.
+// The pixels always survive, so the failure is silent: you paste and get an
+// anonymous image. Wait for the name to actually be readable before leaving.
+let deadline = Date().addingTimeInterval(1.0)
+while pb.data(forType: .fileURL) == nil && Date() < deadline {
+    usleep(10_000)
+}
