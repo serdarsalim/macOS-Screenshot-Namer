@@ -159,3 +159,27 @@ bigger build.
 Screenshots are flat UI and text. Lossless WebP saves about 25% and lossy WebP
 puts ringing artifacts around text, which is the one thing a screenshot of an
 error message cannot afford. Not worth a dependency. PNG stays.
+
+## The launchd watcher
+
+`bin/shotname-watch` renames screenshots macOS saved by itself, so its own
+Cmd+Shift+4 produces named files. It is not needed if the hotkeys above work
+for you, and it carries one hard limitation: a launchd agent cannot see
+`~/Desktop`, so your screenshot location has to be a plain folder.
+
+```bash
+defaults write com.apple.screencapture location ~/Screenshots
+```
+
+Then edit the placeholders in `launchd/com.serdarsalim.shotname.watch.plist`,
+copy it to `~/Library/LaunchAgents/`, and load it:
+
+```bash
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.serdarsalim.shotname.watch.plist
+```
+
+## Debugging
+
+Every run writes one line to `~/.config/shotname/log`. A hotkey that silently
+does nothing and a script that ran and found nothing look identical from the
+outside; the log is what tells them apart.
