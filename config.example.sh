@@ -5,10 +5,10 @@
 DEST="$HOME/Desktop"
 
 # Clipboard captures need a real file on disk, because the filename is what
-# the clipboard carries. They go here instead of on the Desktop, and anything
-# older than CLIP_KEEP_DAYS is swept on the next clipboard capture.
+# the clipboard carries. Once pasted it is dead weight, so each capture
+# replaces the last. Raise CLIP_KEEP if you want a short history instead.
 CLIP_DIR="$HOME/Pictures/shotname"
-CLIP_KEEP_DAYS=30
+CLIP_KEEP=1
 
 # How many words of the window title to keep after the junk is filtered out.
 MAX_TITLE_WORDS=4

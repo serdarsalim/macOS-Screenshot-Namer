@@ -43,8 +43,11 @@ shotname window    # click a window → saved to the Desktop, named
 paste it and the receiving app invents a name or shows none. This writes two
 flavours to one clipboard item: the pixels, so pasting behaves exactly as it
 always did, and a reference to the saved file, so apps that understand files
-show the real name. Those files live in `CLIP_DIR` rather than on the Desktop,
-and get swept after a month.
+show the real name.
+
+Those files live in `CLIP_DIR` rather than on the Desktop, and each capture
+replaces the last. The clipboard only ever points at the newest one, so older
+ones could never be pasted again anyway — keeping them would just be a pile.
 
 `window` works out which window you clicked by matching the captured image
 against the on-screen window sizes, rather than assuming the frontmost one.

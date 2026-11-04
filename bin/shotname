@@ -13,10 +13,10 @@ CONFIG="${SHOTNAME_CONFIG:-$HOME/.config/shotname/config.sh}"
 
 DEST="$HOME/Desktop"
 # Clipboard captures need a real file on disk, because the filename is what
-# the clipboard carries. They go here rather than cluttering the Desktop, and
-# get swept after a month.
+# the clipboard carries. Once pasted it is dead weight, so each capture
+# replaces the last rather than building a pile nobody asked for.
 CLIP_DIR="$HOME/Pictures/shotname"
-CLIP_KEEP_DAYS=30
+CLIP_KEEP=1
 MAX_TITLE_WORDS=4
 MAX_PAGE_WORDS=6
 DETAIL_SOURCE="none"   # none | apple | anthropic
@@ -245,8 +245,13 @@ if [ "$MODE" = "clip" ]; then
   # it always did, and the file reference, so apps that understand files show
   # the real name instead of inventing one.
   helper="$(dirname "$0")/pbimage"
-  [ -x "$helper" ] && "$helper" "$final"
-  find "$CLIP_DIR" -name '*.png' -mtime "+$CLIP_KEEP_DAYS" -delete 2>/dev/null
+  [ -x "$helper" ] && "$helper" "$final" 2>/dev/null
+
+  # Keep only the newest few. The clipboard points at exactly one of these,
+  # and it is always the newest, so older ones can never be pasted again.
+  ls -t "$CLIP_DIR"/*.png 2>/dev/null | tail -n "+$((CLIP_KEEP + 1))" | while read -r old; do
+    rm -f "$old"
+  done
 fi
 
 printf '%s\n' "$final"
