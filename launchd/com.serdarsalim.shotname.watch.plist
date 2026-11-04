@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.serdarsalim.shotname.watch</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/slm/my-portfolio/shotname/bin/shotname-watch</string>
+  </array>
+
+  <!-- ~/Desktop is one of the folders macOS hides from a launchd agent: the
+       directory reads as accessible but lists as empty, so nothing is ever
+       found to rename. A plain folder carries no such restriction. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>SHOTNAME_WATCH_DIR</key>
+    <string>/Users/slm/Screenshots</string>
+  </dict>
+
+  <!-- Fires when the screenshot folder changes, then the script exits. There
+       is no resident process: launchd is already running and simply starts
+       this on a directory event. -->
+  <key>WatchPaths</key>
+  <array>
+    <string>/Users/slm/Screenshots</string>
+  </array>
+
+  <!-- Nothing to do at login; only a new screenshot is interesting. -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- No ThrottleInterval: launchd drops directory events that arrive while
+       the job is throttled, and a dropped event means a screenshot keeps its
+       timestamp name forever. The script exits in milliseconds when there is
+       nothing to rename, so the extra wakeups cost nothing. -->
+  <key>StandardErrorPath</key>
+  <string>/Users/slm/.config/shotname/watch.err</string>
+</dict>
+</plist>

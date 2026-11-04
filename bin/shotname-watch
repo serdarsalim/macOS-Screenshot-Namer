@@ -1,0 +1,71 @@
+#!/bin/bash
+# Renames screenshots that macOS saved by itself.
+#
+# The capture here is macOS's own — Cmd+Shift+4, Cmd+Shift+5, whatever you
+# already have in your fingers. Those are system-level hotkeys and they fire
+# in every situation, including ones where a Shortcuts hotkey quietly does
+# nothing. This runs afterwards and gives the file a real name.
+#
+# launchd starts it when the screenshot folder changes and it exits straight
+# away, so nothing sits in memory and there is no app to run.
+#
+# The cost of renaming after the fact: the window title is read a moment after
+# the shutter rather than during it. Switch apps in that moment and the name
+# is wrong. The file lands in a fraction of a second, so it rarely happens.
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+SHOTNAME_LIB_ONLY=1 . "$HERE/shotname" || exit 1
+
+# Where macOS puts screenshots and what it calls them, as configured rather
+# than as assumed. Both are settable with `defaults write com.apple.screencapture`.
+WATCH_DIR="${SHOTNAME_WATCH_DIR:-$(defaults read com.apple.screencapture location 2>/dev/null)}"
+WATCH_DIR="${WATCH_DIR:-$HOME/Desktop}"
+WATCH_DIR="${WATCH_DIR/#\~/$HOME}"
+PREFIX="$(defaults read com.apple.screencapture name 2>/dev/null)"
+PREFIX="${PREFIX:-Screenshot}"
+
+# launchd can fire this several times for one screenshot, once per write.
+LOCK="/tmp/shotname-watch.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then exit 0; fi
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+
+shopt -s nullglob
+# launchd wakes this on every change to the folder, so only say something
+# when there is actually work, or the log becomes noise.
+_seen=("$WATCH_DIR/$PREFIX"*.png "$WATCH_DIR/$PREFIX"*.jpg)
+[ "${#_seen[@]}" -gt 0 ] && log "scan $WATCH_DIR: ${#_seen[@]} to rename"
+for f in "$WATCH_DIR/$PREFIX"*.png "$WATCH_DIR/$PREFIX"*.jpg; do
+  # macOS writes the file before it finishes writing it, and launchd wakes us
+  # on the first write. Wait for the size to stop moving rather than skipping:
+  # a skipped file is never picked up, because nothing wakes us a second time.
+  settled=""
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    size_a=$(stat -f%z "$f" 2>/dev/null) || break
+    sleep 0.3
+    size_b=$(stat -f%z "$f" 2>/dev/null) || break
+    if [ "$size_a" = "$size_b" ] && [ "$size_b" -gt 0 ]; then settled=1; break; fi
+  done
+  [ -n "$settled" ] || { log "gave up waiting for $(basename "$f")"; continue; }
+
+  px="$(sips -g pixelWidth -g pixelHeight "$f" 2>/dev/null \
+        | awk '/pixelWidth/{w=$2} /pixelHeight/{h=$2} END{print w"x"h}')"
+
+  # --match identifies a window capture by its size and falls back to the
+  # frontmost window for a dragged region, so both kinds name themselves.
+  IFS=$'\t' read -r app title <<< "$(read_context --match "$px")"
+
+  build_name "$f"
+
+  stamp="$(date -r "$f" +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)"
+  ext="${f##*.}"
+  final="$WATCH_DIR/$name-$stamp.$ext"
+  n=2
+  while [ -e "$final" ]; do
+    final="$WATCH_DIR/$name-$stamp-$n.$ext"
+    n=$((n + 1))
+  done
+
+  mv "$f" "$final" && log "renamed $(basename "$f") -> $(basename "$final")"
+done

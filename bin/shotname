@@ -177,6 +177,46 @@ detail_from_anthropic() {
     | jq -r '.content[0].text // empty' 2>/dev/null
 }
 
+# Turns the app name, window title and image into the filename stem.
+# Reads $app and $title, sets $name.
+build_name() {
+  local image="$1"
+  app_slug=""
+  site_slug=""
+  title_max="$MAX_TITLE_WORDS"
+  if printf '%s' "$app" | grep -qE "^($SKIP_APP_NAME_FOR)$"; then
+    full="$(browser_title "$app")"
+    [ -n "$full" ] && title="$full"
+  fi
+
+  # Mail and chat apps put the account address in the title. Keep it out of a
+  # filename that gets pasted into Slack later. Runs after the browser lookup,
+  # since that replaces the title wholesale.
+  title="$(printf '%s' "$title" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}//g')"
+
+  if printf '%s' "$app" | grep -qE "^($SKIP_APP_NAME_FOR)$"; then
+    IFS=$'\t' read -r site head <<< "$(browser_parts "$title")"
+    site_slug="$(trim_title "$(slugify "$site")" "" 2)"
+    [ -n "$site_slug" ] && { title="$head"; title_max="$MAX_PAGE_WORDS"; }
+  else
+    app_slug="$(slugify "$(app_alias "$app")")"
+  fi
+
+  title_slug="$(trim_title "$(slugify "$title")" "$app_slug-$site_slug" "$title_max")"
+
+  detail_slug="$(trim_title "$(slugify "$(detail_from_model "$image")")" "$app_slug-$title_slug" 3)"
+
+  name=""
+  for part in "$app_slug" "$site_slug" "$title_slug" "$detail_slug"; do
+    [ -n "$part" ] && name="${name:+$name-}$part"
+  done
+  [ -z "$name" ] && name="screenshot"
+}
+
+# shotname-watch sources this file for the naming logic but does its own
+# capturing. Everything below is the capture path.
+[ -n "${SHOTNAME_LIB_ONLY:-}" ] && return 0
+
 # ---------------------------------------------------------------- capture
 
 MODE="${1:-$CAPTURE_MODE}"
@@ -209,36 +249,7 @@ mkdir -p "$DEST"
 
 # ---------------------------------------------------------------- name it
 
-app_slug=""
-site_slug=""
-title_max="$MAX_TITLE_WORDS"
-if printf '%s' "$app" | grep -qE "^($SKIP_APP_NAME_FOR)$"; then
-  full="$(browser_title "$app")"
-  [ -n "$full" ] && title="$full"
-fi
-
-# Mail and chat apps put the account address in the title. Keep it out of a
-# filename that gets pasted into Slack later. Runs after the browser lookup,
-# since that replaces the title wholesale.
-title="$(printf '%s' "$title" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}//g')"
-
-if printf '%s' "$app" | grep -qE "^($SKIP_APP_NAME_FOR)$"; then
-  IFS=$'\t' read -r site head <<< "$(browser_parts "$title")"
-  site_slug="$(trim_title "$(slugify "$site")" "" 2)"
-  [ -n "$site_slug" ] && { title="$head"; title_max="$MAX_PAGE_WORDS"; }
-else
-  app_slug="$(slugify "$(app_alias "$app")")"
-fi
-
-title_slug="$(trim_title "$(slugify "$title")" "$app_slug-$site_slug" "$title_max")"
-
-detail_slug="$(trim_title "$(slugify "$(detail_from_model "$tmp")")" "$app_slug-$title_slug" 3)"
-
-name=""
-for part in "$app_slug" "$site_slug" "$title_slug" "$detail_slug"; do
-  [ -n "$part" ] && name="${name:+$name-}$part"
-done
-[ -z "$name" ] && name="screenshot"
+build_name "$tmp"
 
 # Name first, date trailing: the date is for when the file leaves the Mac and
 # loses its metadata, not for sorting.
