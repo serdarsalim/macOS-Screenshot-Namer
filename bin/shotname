@@ -35,25 +35,14 @@ say() { printf '%s\n' "$*" >&2; }
 
 # ---------------------------------------------------------------- context
 
-frontmost_app() {
-  osascript -e 'tell application "System Events" to name of first process whose frontmost is true' 2>/dev/null
-}
-
-# Needs Accessibility permission for whatever runs this script. Without it we
-# silently fall back to the app name alone rather than failing the capture.
-front_window_title() {
-  local app="$1"
-  osascript 2>/dev/null <<EOF
-tell application "System Events"
-  tell process "$app"
-    try
-      return name of front window
-    on error
-      return ""
-    end try
-  end tell
-end tell
-EOF
+# frontwindow prints "<app>\t<title>". It reads the title through CGWindowList,
+# which rides on the Screen Recording permission screencapture already needs —
+# no separate Accessibility grant to go hunting for.
+read_context() {
+  local helper="$(dirname "$0")/frontwindow"
+  [ -x "$helper" ] && "$helper" 2>/dev/null && return
+  # No helper compiled: fall back to the app name, which needs no permission.
+  printf '%s\t\n' "$(osascript -e 'tell application "System Events" to name of first process whose frontmost is true' 2>/dev/null)"
 }
 
 # ---------------------------------------------------------------- slugging
@@ -132,8 +121,7 @@ detail_from_anthropic() {
 
 # ---------------------------------------------------------------- capture
 
-app="$(frontmost_app)"
-title="$(front_window_title "$app")"
+IFS=$'\t' read -r app title <<< "$(read_context)"
 
 tmp="$(mktemp -t shotname).png"
 case "$CAPTURE_MODE" in

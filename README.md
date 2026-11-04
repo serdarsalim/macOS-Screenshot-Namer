@@ -35,9 +35,11 @@ Two shots of the same screen on the same day get `-2`, `-3`, and so on.
 
 ```bash
 mkdir -p ~/.config/shotname && cp config.example.sh ~/.config/shotname/config.sh
+swiftc -O src/frontwindow.swift -o bin/frontwindow
 ```
 
-Then put `bin/shotname` on your PATH, or call it by its full path.
+Then put `bin/shotname` on your PATH, or call it by its full path. Without the
+compiled helper it still runs, but names files from the app alone.
 
 ### The hotkey
 
@@ -53,11 +55,18 @@ hotkey for free:
 
 ### The permission
 
-Reading window titles needs Accessibility. Without it, shotname still works but
-names files from the app alone — `nudge-2026-11-04.png` instead of
-`nudge-contacts-2026-11-04.png`.
+There is nothing to grant by hand. Window titles are read through
+`CGWindowList`, which rides on the same Screen Recording permission
+`screencapture` already needs, so one grant covers both.
 
-System Settings → Privacy & Security → Accessibility → add **Shortcuts**.
+The obvious route — asking System Events for the title over AppleScript —
+needs a separate Accessibility grant, and the pane that controls it is buried
+under Privacy & Security below Camera, sharing its name with the unrelated
+Accessibility settings for VoiceOver and zoom. That is why this uses the
+window list instead.
+
+The first time your shortcut runs, macOS asks for Screen Recording. Click
+Allow and you are done.
 
 ## Letting a model describe the screen
 
