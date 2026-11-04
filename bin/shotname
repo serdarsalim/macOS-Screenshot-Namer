@@ -13,6 +13,7 @@ CONFIG="${SHOTNAME_CONFIG:-$HOME/.config/shotname/config.sh}"
 
 DEST="$HOME/Desktop"
 MAX_TITLE_WORDS=4
+MAX_PAGE_WORDS=6
 DETAIL_SOURCE="none"   # none | apple | anthropic
 ANTHROPIC_MODEL="claude-haiku-5-5"
 CAPTURE_MODE="interactive"   # interactive | window | screen
@@ -75,6 +76,25 @@ trim_title() {
     [ "$count" -ge "$max" ] && break
   done
   printf '%s' "$out"
+}
+
+# The window title macOS hands out is already shortened, with an ellipsis
+# dropped mid-word: "Six must…e strategies". Browsers know the real one, so
+# ask them for it. Needs Automation permission, which macOS prompts for once;
+# if it is refused we keep the shortened title and carry on.
+browser_title() {
+  case "$1" in
+    "Google Chrome"|"Brave Browser"|"Microsoft Edge"|"Arc"|"Chromium")
+      osascript - "$1" <<'EOF' 2>/dev/null
+on run argv
+  tell application (item 1 of argv) to return title of active tab of front window
+end run
+EOF
+      ;;
+    "Safari")
+      osascript -e 'tell application "Safari" to return name of current tab of front window' 2>/dev/null
+      ;;
+  esac
 }
 
 # Browsers put the page title first and the site last: "Contacts | Nudge".
@@ -157,17 +177,23 @@ esac
 
 # ---------------------------------------------------------------- name it
 
-# Mail and chat apps put the account address in the title. Keep it out of a
-# filename that gets pasted into Slack later.
-title="$(printf '%s' "$title" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}//g')"
-
 app_slug=""
 site_slug=""
 title_max="$MAX_TITLE_WORDS"
 if printf '%s' "$app" | grep -qE "^($SKIP_APP_NAME_FOR)$"; then
+  full="$(browser_title "$app")"
+  [ -n "$full" ] && title="$full"
+fi
+
+# Mail and chat apps put the account address in the title. Keep it out of a
+# filename that gets pasted into Slack later. Runs after the browser lookup,
+# since that replaces the title wholesale.
+title="$(printf '%s' "$title" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}//g')"
+
+if printf '%s' "$app" | grep -qE "^($SKIP_APP_NAME_FOR)$"; then
   IFS=$'\t' read -r site head <<< "$(browser_parts "$title")"
   site_slug="$(trim_title "$(slugify "$site")" "" 2)"
-  [ -n "$site_slug" ] && { title="$head"; title_max=3; }
+  [ -n "$site_slug" ] && { title="$head"; title_max="$MAX_PAGE_WORDS"; }
 else
   app_slug="$(slugify "$(app_alias "$app")")"
 fi
