@@ -45,6 +45,11 @@ app_alias() {
 
 say() { printf '%s\n' "$*" >&2; }
 
+# One line per run. A hotkey that silently does nothing is otherwise
+# impossible to tell apart from a script that ran and found nothing.
+LOG="${SHOTNAME_LOG:-$HOME/.config/shotname/log}"
+log() { [ -n "$LOG" ] && printf '%s  %s\n' "$(date '+%H:%M:%S')" "$*" >> "$LOG" 2>/dev/null; }
+
 # ---------------------------------------------------------------- context
 
 # frontwindow prints "<app>\t<title>". It reads the title through CGWindowList,
@@ -175,6 +180,7 @@ detail_from_anthropic() {
 # ---------------------------------------------------------------- capture
 
 MODE="${1:-$CAPTURE_MODE}"
+log "start mode=$MODE"
 
 tmp="$(mktemp -t shotname).png"
 case "$MODE" in
@@ -188,7 +194,7 @@ case "$MODE" in
 esac
 
 # Escape during capture leaves no file. That is a cancel, not an error.
-[ -s "$tmp" ] || { rm -f "$tmp"; exit 0; }
+[ -s "$tmp" ] || { log "cancelled (no file)"; rm -f "$tmp"; exit 0; }
 
 if [ "$MODE" = "window" ]; then
   size="$(sips -g pixelWidth -g pixelHeight "$tmp" 2>/dev/null \
@@ -236,6 +242,14 @@ done
 
 # Name first, date trailing: the date is for when the file leaves the Mac and
 # loses its metadata, not for sorting.
+# Sweep older clips before naming, not after. Otherwise the collision counter
+# climbs against files that are about to be deleted, and a folder holding one
+# screenshot hands out names ending -2, -3, -4.
+if [ "$MODE" = "clip" ]; then
+  ls -t "$CLIP_DIR"/*.png "$CLIP_DIR"/*.webp 2>/dev/null \
+    | tail -n "+$CLIP_KEEP" | while read -r old; do rm -f "$old"; done
+fi
+
 ext="png"
 if [ "$MODE" = "clip" ] && [ "$CLIP_FORMAT" = "webp" ] && command -v cwebp >/dev/null; then
   ext="webp"
@@ -265,13 +279,7 @@ if [ "$MODE" = "clip" ]; then
   flags=""
   [ "$CLIP_FILE_ONLY" = "yes" ] && flags="--file-only"
   [ -x "$helper" ] && "$helper" "$final" $flags 2>/dev/null
-
-  # Keep only the newest few. The clipboard points at exactly one of these,
-  # and it is always the newest, so older ones can never be pasted again.
-  ls -t "$CLIP_DIR"/*.png "$CLIP_DIR"/*.webp 2>/dev/null \
-    | tail -n "+$((CLIP_KEEP + 1))" | while read -r old; do
-    rm -f "$old"
-  done
 fi
 
+log "saved $final"
 printf '%s\n' "$final"
