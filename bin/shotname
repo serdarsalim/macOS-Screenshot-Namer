@@ -77,6 +77,28 @@ trim_title() {
   printf '%s' "$out"
 }
 
+# Browsers put the page title first and the site last: "Contacts | Nudge".
+# The site is the more identifying half, so it leads the name.
+browser_parts() {
+  local t="$1" head tail=""
+  case "$t" in
+    *" | "*) tail="${t##* | }"; head="${t% | *}" ;;
+    *" - "*) tail="${t##* - }"; head="${t% - *}" ;;
+    *)       head="$t" ;;
+  esac
+  # The site half is often "LBS - YouTube". Keep the rightmost name.
+  case "$tail" in
+    *" - "*) tail="${tail##* - }" ;;
+    *" | "*) tail="${tail##* | }" ;;
+  esac
+  # macOS truncates long titles with an ellipsis that lands mid-word, so the
+  # word it cuts is a fragment. Drop it along with everything after.
+  case "$head" in
+    *…*) head="${head%%…*}"; head="${head% *}" ;;
+  esac
+  printf '%s\t%s' "$tail" "$head"
+}
+
 # ---------------------------------------------------------------- detail
 
 detail_from_model() {
@@ -135,21 +157,27 @@ esac
 
 # ---------------------------------------------------------------- name it
 
-app_slug=""
-if ! printf '%s' "$app" | grep -qE "^($SKIP_APP_NAME_FOR)$"; then
-  app_slug="$(slugify "$(app_alias "$app")")"
-fi
-
 # Mail and chat apps put the account address in the title. Keep it out of a
 # filename that gets pasted into Slack later.
 title="$(printf '%s' "$title" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}//g')"
 
-title_slug="$(trim_title "$(slugify "$title")" "$app_slug" "$MAX_TITLE_WORDS")"
+app_slug=""
+site_slug=""
+title_max="$MAX_TITLE_WORDS"
+if printf '%s' "$app" | grep -qE "^($SKIP_APP_NAME_FOR)$"; then
+  IFS=$'\t' read -r site head <<< "$(browser_parts "$title")"
+  site_slug="$(trim_title "$(slugify "$site")" "" 2)"
+  [ -n "$site_slug" ] && { title="$head"; title_max=3; }
+else
+  app_slug="$(slugify "$(app_alias "$app")")"
+fi
+
+title_slug="$(trim_title "$(slugify "$title")" "$app_slug-$site_slug" "$title_max")"
 
 detail_slug="$(trim_title "$(slugify "$(detail_from_model "$tmp")")" "$app_slug-$title_slug" 3)"
 
 name=""
-for part in "$app_slug" "$title_slug" "$detail_slug"; do
+for part in "$app_slug" "$site_slug" "$title_slug" "$detail_slug"; do
   [ -n "$part" ] && name="${name:+$name-}$part"
 done
 [ -z "$name" ] && name="screenshot"
