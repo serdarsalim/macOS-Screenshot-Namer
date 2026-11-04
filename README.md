@@ -15,13 +15,47 @@ Name first, date trailing. The date is there for when the file leaves the Mac
 and loses its metadata, not for sorting — Finder already sorts on Date Created.
 Putting the name first means typing `nudge` in Spotlight finds every shot of it.
 
+## Five things macOS does that cost us an afternoon
+
+Each of these fails silently. Nothing errors, nothing logs, and the obvious
+implementation looks like it works. If you are building something similar,
+this list is the useful part of this repository.
+
+**Window titles over AppleScript need a permission you will not find.** Asking
+System Events for the front window title requires an Accessibility grant,
+controlled by a pane buried under Privacy & Security below Camera, sharing its
+name with the unrelated Accessibility settings for VoiceOver and zoom. Reading
+the same titles through `CGWindowList` instead rides on the Screen Recording
+permission screenshots already need, so there is nothing extra to grant.
+
+**The window title macOS publishes is already truncated.** Long titles arrive
+cut mid-word with an ellipsis: `Six must…e strategies`. The full text never
+reaches you, and the fragment it leaves behind becomes a word in your filename.
+Browsers know the real title and will tell you over AppleScript.
+
+**The clipboard loses a file reference if you exit immediately.** `writeObjects`
+returns before the pasteboard server has finished taking it. Measured here at
+one success in five. The pixels always survive, so a paste looks fine while the
+name is gone. Poll until the name reads back before exiting.
+
+**An app offered both pixels and a file takes the pixels.** It never looks at
+the file, so the name is dropped in exactly the case you added it for. Offering
+the file alone is the only way to force it, and it costs you anything that
+cannot accept a pasted file.
+
+**A launchd agent sees `~/Desktop` as empty.** The directory reports as readable
+and lists zero files, so a watcher finds nothing to do and exits cleanly, every
+time. Measured 0/5 against the Desktop and 5/5 against a plain folder. There is
+no permission the agent can request.
+
 ## What it produces
 
 | App | Window title | Filename |
 |---|---|---|
 | Nudge | Contacts | `nudge-contacts-2026-11-04.png` |
-| Chrome | Contacts \| Nudge | `contacts-nudge-2026-11-04.png` |
-| Chrome | Inbox (12) - you@gmail.com - Gmail | `inbox-gmail-2026-11-04.png` |
+| Chrome | Contacts \| Nudge | `nudge-contacts-2026-11-04.png` |
+| Chrome | Inbox (12) - you@gmail.com - Gmail | `gmail-inbox-2026-11-04.png` |
+| Chrome | a YouTube talk | `youtube-kevin-systrom-finding-2026-11-04.png` |
 | Terminal | slm — -zsh — 120x30 | `terminal-slm-zsh-2026-11-04.png` |
 | VS Code | index.ts — nudge | `code-index-ts-nudge-2026-11-04.png` |
 
